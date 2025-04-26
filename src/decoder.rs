@@ -7,21 +7,21 @@ pub struct RInstr {
 
 #[derive(Debug)]
 pub struct IInstr {
-    pub imm: u32,
+    pub imm: i32,
     pub rs1: u8,
     pub rd: u8,
 }
 
 #[derive(Debug)]
 pub struct SInstr {
-    pub imm: u32,
+    pub imm: i32,
     pub rs2: u8,
     pub rs1: u8,
 }
 
 #[derive(Debug)]
 pub struct UInstr {
-    pub imm: u32,
+    pub imm: i32,
     pub rd: u8,
 }
 
@@ -136,6 +136,23 @@ mod f7codes {
     pub const SRA: u32 = 0b0100000;
 }
 
+
+fn utoi(imm: u32) -> i32 {
+    let bytes: [u8; 4] = imm.to_ne_bytes();
+    i32::from_ne_bytes(bytes)
+}
+
+fn sign_extend(imm: u32, len: u32) -> i32 {
+    let sign_bit = 1 << (len - 1);
+    let mask = (2u32.pow(32 - len) - 1) << len;
+    let signed_val = if imm & sign_bit != 0 {
+        imm | mask
+    } else {
+        imm
+    };
+    utoi(signed_val)
+}
+
 fn decode_r(instruction: u32) -> RInstr {
     RInstr {
         rs2: ((instruction >> 20) & 0b11111) as u8,
@@ -146,7 +163,7 @@ fn decode_r(instruction: u32) -> RInstr {
 
 fn decode_i(instruction: u32) -> IInstr {
     IInstr {
-        imm: (instruction >> 20) & 0b111111111111,
+        imm: sign_extend((instruction >> 20) & 0b111111111111, 12),
         rs1: ((instruction >> 15) & 0b11111) as u8,
         rd: ((instruction >> 7) & 0b11111) as u8,
     }
@@ -154,7 +171,10 @@ fn decode_i(instruction: u32) -> IInstr {
 
 fn decode_s(instruction: u32) -> SInstr {
     SInstr {
-        imm: ((instruction >> 25) << 5) | ((instruction >> 7) & 0b11111),
+        imm: sign_extend(
+            ((instruction >> 25) << 5) | ((instruction >> 7) & 0b11111),
+            12,
+        ),
         rs1: ((instruction >> 15) & 0b11111) as u8,
         rs2: ((instruction >> 20) & 0b11111) as u8,
     }
@@ -162,17 +182,20 @@ fn decode_s(instruction: u32) -> SInstr {
 
 fn decode_u(instruction: u32) -> UInstr {
     UInstr {
-        imm: instruction & !0b000000000000,
+        imm: utoi(instruction & !0b111111111111),
         rd: ((instruction >> 7) & 0b11111) as u8,
     }
 }
 
 fn decode_b(instruction: u32) -> SInstr {
     SInstr {
-        imm: ((instruction >> 31) << 11)
-            | ((instruction >> 7 & 0b1) << 10)
-            | (((instruction >> 25) & 0b0111111) << 4)
-            | (((instruction >> 8) & 0b1111) << 1),
+        imm: sign_extend(
+            ((instruction >> 31) << 11)
+                | ((instruction >> 7 & 0b1) << 10)
+                | (((instruction >> 25) & 0b0111111) << 4)
+                | (((instruction >> 8) & 0b1111) << 1),
+            13,
+        ),
         rs1: ((instruction >> 15) & 0b11111) as u8,
         rs2: ((instruction >> 20) & 0b11111) as u8,
     }
@@ -180,10 +203,13 @@ fn decode_b(instruction: u32) -> SInstr {
 
 fn decode_j(instruction: u32) -> UInstr {
     UInstr {
-        imm: (((instruction >> 31) & 1) << 20)
-            | (((instruction >> 12) & 0b11111111) << 12)
-            | (((instruction >> 20) & 1) << 11)
-            | (((instruction >> 21) & 0b1111111111) << 1),
+        imm: sign_extend(
+            (((instruction >> 31) & 1) << 20)
+                | (((instruction >> 12) & 0b11111111) << 12)
+                | (((instruction >> 20) & 1) << 11)
+                | (((instruction >> 21) & 0b1111111111) << 1),
+            21,
+        ),
         rd: ((instruction >> 7) & 0b11111) as u8,
     }
 }
@@ -265,7 +291,7 @@ fn decode_s_with_f(instruction: u32) -> Instruction {
         f3codes::SB => Instruction::SB(decode_s(instruction)),
         f3codes::SH => Instruction::SH(decode_s(instruction)),
         f3codes::SW => Instruction::SW(decode_s(instruction)),
-        _ => unreachable!(),
+        _ => {println!("Unkown instruction: f3 = {:b}, instruction = {:b}", f3, instruction); unreachable!()},
     }
 }
 
@@ -292,6 +318,9 @@ pub fn decode(instruction: u32) -> Instruction {
         opcodes::RI_TYPE => decode_ri_with_f(instruction),
         opcodes::I_TYPE => decode_i_with_f(instruction),
         opcodes::S_TYPE => decode_s_with_f(instruction),
-        _ => unreachable!(),
+        _ => {
+            println!("Unkown instruction: {:b}", opcode);
+            unreachable!()
+        },
     }
 }

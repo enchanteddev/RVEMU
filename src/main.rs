@@ -7,19 +7,23 @@ struct Machine {
     pc: u32,
 }
 
-fn read_instructions(fp: &Path) -> Vec<u32> {
-    // the file is a text file with one instruction per line, in binary format
+
+fn read_instructions_binary(fp: &Path) -> Vec<u32> {
+    // the file is a binary file with one instruction per 4 bytes, in binary format
     let mut file = std::fs::File::open(fp).unwrap();
-    let mut buffer = String::new();
-    file.read_to_string(&mut buffer).unwrap();
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).unwrap();
     buffer
-        .split('\n')
-        .map(|x| u32::from_str_radix(x, 2).unwrap())
+        .chunks(4)
+        .map(|x| u32::from_le_bytes(x.try_into().unwrap()))
         .collect()
 }
 
 fn main() {
-    let instructions_raw = read_instructions(&Path::new("tests/add.txt"));
+    let instructions_raw = read_instructions_binary(&Path::new("tests/hello.bin"));
+    for i in &instructions_raw {
+        println!("{:b}", i);
+    }
     let instructions = instructions_raw
         .iter()
         .map(|x| decoder::decode(*x))
