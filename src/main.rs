@@ -71,41 +71,41 @@ impl Machine {
             }
             Instruction::JAL(UInstr { imm, rd }) => {
                 self.registers[rd as usize] = self.pc + 1;
-                self.pc = imm;
+                self.pc += imm >> 2;
             },
             Instruction::JALR(IInstr { imm, rs1, rd }) => {
-                self.registers[rd as usize] = self.registers[rs1 as usize];
-                self.pc = self.registers[rs1 as usize] + imm >> 2;
+                self.registers[rd as usize] = self.pc + 1;
+                self.pc = self.registers[rs1 as usize] + (imm >> 2);
             },
             Instruction::BEQ(SInstr { imm, rs1, rs2 }) => {
                 if self.registers[rs1 as usize] == self.registers[rs2 as usize] {
-                    self.pc = self.pc.wrapping_add(sign_extend(imm, 12) >> 2);
+                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
             },
             Instruction::BNE(SInstr { imm, rs1, rs2 }) => {
                 if self.registers[rs1 as usize] != self.registers[rs2 as usize] {
-                    println!("{}", sign_extend(imm, 12));
-                    self.pc = self.pc.wrapping_add(sign_extend(imm, 12) >> 2);
+                    println!("{}", sign_extend(imm, 12) as i32);
+                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
             },
             Instruction::BLT(SInstr { imm, rs1, rs2 }) => {
                 if (self.registers[rs1 as usize] as i32) < (self.registers[rs2 as usize] as i32) {
-                    self.pc = self.pc.wrapping_add(sign_extend(imm, 12) >> 2);
+                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
             },
             Instruction::BGE(SInstr { imm, rs1, rs2 }) => {
                 if (self.registers[rs1 as usize] as i32) >= (self.registers[rs2 as usize] as i32) {
-                    self.pc = self.pc.wrapping_add(sign_extend(imm, 12) >> 2);
+                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
             },
             Instruction::BLTU(SInstr { imm, rs1, rs2 }) => {
                 if self.registers[rs1 as usize] < self.registers[rs2 as usize] {
-                    self.pc = self.pc.wrapping_add(sign_extend(imm, 12) >> 2);
+                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
             },
             Instruction::BGEU(SInstr { imm, rs1, rs2 }) => {
                 if self.registers[rs1 as usize] >= self.registers[rs2 as usize] {
-                    self.pc = self.pc.wrapping_add(sign_extend(imm, 12) >> 2);
+                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
             },
             Instruction::LB(IInstr { imm, rs1, rd }) => {
@@ -261,22 +261,19 @@ fn read_instructions_binary(fp: &Path) -> Vec<u32> {
 
 fn main() {
     let instructions_raw = read_instructions_binary(&Path::new("tests/hello.bin"));
-    for i in &instructions_raw {
-        println!("{:b}", i);
-    }
     let instructions = instructions_raw
         .iter()
         .map(|x| decoder::decode(*x))
         .collect::<Vec<decoder::Instruction>>();
 
-    for i in &instructions {
-        println!("{:?}", i);
+    for (instr, raw) in instructions.iter().zip(instructions_raw.iter()) {
+        println!("{:?}: {:b}", instr, raw);
     }
     let mut machine = Machine::new();
     machine.load_instructions(instructions);
     loop {
-        machine.step();
         println!("{:?}", machine.instructions[machine.pc as usize]);
+        machine.step();
         println!("{:?}", machine.registers);
         io::stdin().read_line(&mut String::new()).unwrap();
     }

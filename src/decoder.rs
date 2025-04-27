@@ -178,7 +178,7 @@ fn decode_b(instruction: u32) -> SInstr {
     SInstr {
         imm: ((instruction >> 31) << 11)
             | ((instruction >> 7 & 0b1) << 10)
-            | (((instruction >> 25) & 0b0111111) << 4)
+            | (((instruction >> 25) & 0b0111111) << 5)
             | (((instruction >> 8) & 0b1111) << 1),
         rs1: ((instruction >> 15) & 0b11111) as u8,
         rs2: ((instruction >> 20) & 0b11111) as u8,
