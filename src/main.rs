@@ -2,19 +2,33 @@ use decoder::{IInstr, Instruction, RInstr, SInstr, UInstr};
 use std::{
     collections::HashMap,
     io::{self, Read},
+    ops::{BitAnd, BitOr, BitXor},
     path::Path,
 };
 
 mod decoder;
 
+#[derive(Debug, Clone, Copy)]
+struct Flags {
+    reserved: bool,
+}
+
+impl Default for Flags {
+    fn default() -> Self {
+        Flags { reserved: false }
+    }
+}
+
 struct DynamicMemory {
     inner: HashMap<u32, u8>,
+    flags: HashMap<u32, Flags>,
 }
 
 impl DynamicMemory {
     fn new() -> Self {
         DynamicMemory {
             inner: HashMap::new(),
+            flags: HashMap::new(),
         }
     }
 
@@ -25,10 +39,55 @@ impl DynamicMemory {
         }
     }
 
+    fn load_word(&mut self, addr: u32) -> u32 {
+        let first_byte = self.load(addr as u32) as u32;
+        let second_byte = self.load(addr as u32 + 1) as u32;
+        let third_byte = self.load(addr as u32 + 2) as u32;
+        let fourth_byte = self.load(addr as u32 + 3) as u32;
+        fourth_byte << 24 | third_byte << 16 | second_byte << 8 | first_byte
+    }
+
+    fn store_word(&mut self, addr: u32, value: u32) {
+        let first_byte = value as u8;
+        let second_byte = (value >> 8) as u8;
+        let third_byte = (value >> 16) as u8;
+        let fourth_byte = (value >> 24) as u8;
+        self.store(addr as u32, first_byte);
+        self.store(addr as u32 + 1, second_byte);
+        self.store(addr as u32 + 2, third_byte);
+        self.store(addr as u32 + 3, fourth_byte);
+    }
+
     fn store(&mut self, addr: u32, value: u8) {
+        self.flags.get_mut(&addr).map(|flags| {
+            flags.reserved = false;
+        });
         if value != 0 {
             self.inner.insert(addr, value);
+        } else {
+            self.inner.remove(&addr);
         }
+    }
+
+    fn set_flags<T>(&mut self, addr: u32, operation: T)
+    where
+        T: Fn(&mut Flags),
+    {
+        let flags = match self.flags.get_mut(&addr) {
+            Some(flags) => flags,
+            None => {
+                let flags = Flags::default();
+                self.flags.insert(addr, flags);
+                // this unwrap is guaranteed to succeed
+                // because we just inserted the flags
+                self.flags.get_mut(&addr).unwrap()
+            }
+        };
+        operation(flags);
+    }
+
+    fn get_flags(&self, addr: u32) -> Flags {
+        self.flags.get(&addr).copied().unwrap_or_default()
     }
 }
 
@@ -129,12 +188,7 @@ impl Machine {
             }
             Instruction::LW(IInstr { imm, rs1, rd }) => {
                 let addr = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
-                let first_byte = self.memory.load(addr as u32) as u32;
-                let second_byte = self.memory.load(addr as u32 + 1) as u32;
-                let third_byte = self.memory.load(addr as u32 + 2) as u32;
-                let fourth_byte = self.memory.load(addr as u32 + 3) as u32;
-                self.registers[rd as usize] =
-                    fourth_byte << 24 | third_byte << 16 | second_byte << 8 | first_byte;
+                self.registers[rd as usize] = self.memory.load_word(addr as u32);
             }
             Instruction::LBU(IInstr { imm, rs1, rd }) => {
                 let addr = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
@@ -162,14 +216,7 @@ impl Machine {
             Instruction::SW(SInstr { imm, rs1, rs2 }) => {
                 let addr = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
                 let reg_val = self.registers[rs2 as usize];
-                let first_byte = reg_val as u8;
-                let second_byte = (reg_val >> 8) as u8;
-                let third_byte = (reg_val >> 16) as u8;
-                let fourth_byte = (reg_val >> 24) as u8;
-                self.memory.store(addr as u32, first_byte);
-                self.memory.store(addr as u32 + 1, second_byte);
-                self.memory.store(addr as u32 + 2, third_byte);
-                self.memory.store(addr as u32 + 3, fourth_byte);
+                self.memory.store_word(addr, reg_val);
             }
             Instruction::ADDI(IInstr { imm, rs1, rd }) => {
                 self.registers[rd as usize] =
@@ -301,6 +348,78 @@ impl Machine {
                 let rs2_val = self.registers[rs2 as usize];
                 self.registers[rd as usize] = rs1_val.wrapping_rem(rs2_val);
             }
+            Instruction::LR(RInstr { rs1, rd, .. }) => {
+                let addr = self.registers[rs1 as usize];
+                self.registers[rd as usize] = self.memory.load_word(addr as u32);
+                self.memory.set_flags(addr as u32, |flags| {
+                    flags.reserved = true;
+                });
+            }
+            Instruction::SC(RInstr { rs1, rs2, rd }) => {
+                let addr = self.registers[rs1 as usize];
+                let reserved = self.memory.get_flags(addr).reserved;
+                if !reserved {
+                    self.registers[rd as usize] = 1;
+                } else {
+                    let reg_val = self.registers[rs2 as usize];
+                    self.memory.store_word(addr, reg_val);
+                    self.registers[rd as usize] = 0;
+                }
+            }
+            Instruction::AMOSWAP(RInstr { rs1, rs2, rd }) => {
+                self.registers[rd as usize] = self.memory.load_word(self.registers[rs1 as usize]);
+                self.registers.swap(rs2 as usize, rd as usize);
+                self.memory
+                    .store_word(self.registers[rs1 as usize], self.registers[rd as usize]);
+            }
+            Instruction::AMOADD(RInstr { rs1, rs2, rd }) => {
+                self.registers[rd as usize] = self
+                    .memory
+                    .load_word(self.registers[rs1 as usize])
+                    .wrapping_add(self.registers[rs2 as usize]);
+                self.memory
+                    .store_word(self.registers[rs1 as usize], self.registers[rd as usize]);
+            }
+            Instruction::AMOAND(RInstr { rs1, rs2, rd }) => {
+                self.registers[rd as usize] = self
+                    .memory
+                    .load_word(self.registers[rs1 as usize])
+                    .bitand(self.registers[rs2 as usize]);
+                self.memory
+                    .store_word(self.registers[rs1 as usize], self.registers[rd as usize]);
+            }
+            Instruction::AMOOR(RInstr { rs1, rs2, rd }) => {
+                self.registers[rd as usize] = self
+                    .memory
+                    .load_word(self.registers[rs1 as usize])
+                    .bitor(self.registers[rs2 as usize]);
+                self.memory
+                    .store_word(self.registers[rs1 as usize], self.registers[rd as usize]);
+            }
+            Instruction::AMOXOR(RInstr { rs1, rs2, rd }) => {
+                self.registers[rd as usize] = self
+                    .memory
+                    .load_word(self.registers[rs1 as usize])
+                    .bitxor(self.registers[rs2 as usize]);
+                self.memory
+                    .store_word(self.registers[rs1 as usize], self.registers[rd as usize]);
+            }
+            Instruction::AMOMAX(RInstr { rs1, rs2, rd }) => {
+                self.registers[rd as usize] = self
+                    .memory
+                    .load_word(self.registers[rs1 as usize])
+                    .max(self.registers[rs2 as usize]);
+                self.memory
+                    .store_word(self.registers[rs1 as usize], self.registers[rd as usize]);
+            }
+            Instruction::AMOMIN(RInstr { rs1, rs2, rd }) => {
+                self.registers[rd as usize] = self
+                    .memory
+                    .load_word(self.registers[rs1 as usize])
+                    .min(self.registers[rs2 as usize]);
+                self.memory
+                    .store_word(self.registers[rs1 as usize], self.registers[rd as usize]);
+            }
             _ => {
                 println!("Unknown instruction: {:?}", instruction);
             }
@@ -321,7 +440,6 @@ fn read_instructions_binary(fp: &Path) -> Vec<u32> {
         .map(|x| u32::from_le_bytes(x.try_into().unwrap()))
         .collect()
 }
-
 
 fn main() {
     let instructions_raw = read_instructions_binary(&Path::new("tests/hello.bin"));

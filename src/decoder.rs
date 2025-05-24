@@ -64,6 +64,7 @@ pub enum Instruction {
     SRA(RInstr),
     OR(RInstr),
     AND(RInstr),
+
     MUL(RInstr),
     MULH(RInstr),
     MULSU(RInstr),
@@ -72,6 +73,16 @@ pub enum Instruction {
     DIVU(RInstr),
     REM(RInstr),
     REMU(RInstr),
+
+    LR(RInstr),
+    SC(RInstr),
+    AMOSWAP(RInstr),
+    AMOADD(RInstr),
+    AMOAND(RInstr),
+    AMOOR(RInstr),
+    AMOXOR(RInstr),
+    AMOMAX(RInstr),
+    AMOMIN(RInstr),
 
     FENCE {
         fm: u8,
@@ -95,6 +106,7 @@ mod opcodes {
     pub const B_TYPE: u32 = 0b1100011;
     pub const R_TYPE: u32 = 0b0110011;
     pub const RI_TYPE: u32 = 0b0010011;
+    pub const RA_TYPE: u32 = 0b0101111;
     pub const I_TYPE: u32 = 0b0000011;
     pub const S_TYPE: u32 = 0b0100011;
 }
@@ -143,6 +155,8 @@ mod f3codes {
     pub const DIVU: u32 = 0b101;
     pub const REM: u32 = 0b110;
     pub const REMU: u32 = 0b111;
+
+    pub const ATOMIC: u32 = 0x2;
 }
 
 mod f7codes {
@@ -155,7 +169,17 @@ mod f7codes {
     pub const SRA: u32 = 0b0100000;
 }
 
-
+mod f5codes {
+    pub const LR: u32 = 0x2;
+    pub const SC: u32 = 0x3;
+    pub const AMOSWAP: u32 = 0x1;
+    pub const AMOADD: u32 = 0x0;
+    pub const AMOAND: u32 = 0xC;
+    pub const AMOOR: u32 = 0xA;
+    pub const AMOXOR: u32 = 0x4;
+    pub const AMOMAX: u32 = 0x14;
+    pub const AMOMIN: u32 = 0x10;
+}
 
 fn decode_r(instruction: u32) -> RInstr {
     RInstr {
@@ -293,6 +317,31 @@ fn decode_ri_with_f(instruction: u32) -> Instruction {
     }
 }
 
+fn decode_ra_with_f(instruction: u32) -> Instruction {
+    let f3 = instruction >> 12 & 0b111;
+    /*
+    Here I am ignoring the aq and rl bits. 
+    Since they control perception to other cores, 
+    and this emulator is single core, I am ignoring them.
+     */
+    let f5 = instruction >> 27;
+    if f3 != f3codes::ATOMIC {
+        unreachable!();
+    }
+    match f5 {
+        f5codes::LR => Instruction::LR(decode_r(instruction)),
+        f5codes::SC => Instruction::SC(decode_r(instruction)),
+        f5codes::AMOSWAP => Instruction::AMOSWAP(decode_r(instruction)),
+        f5codes::AMOADD => Instruction::AMOADD(decode_r(instruction)),
+        f5codes::AMOAND => Instruction::AMOAND(decode_r(instruction)),
+        f5codes::AMOOR => Instruction::AMOOR(decode_r(instruction)),
+        f5codes::AMOXOR => Instruction::AMOXOR(decode_r(instruction)),
+        f5codes::AMOMAX => Instruction::AMOMAX(decode_r(instruction)),
+        f5codes::AMOMIN => Instruction::AMOMIN(decode_r(instruction)),
+        _ => unreachable!(),
+    }
+}
+
 fn decode_i_with_f(instruction: u32) -> Instruction {
     let f3 = instruction >> 12 & 0b111;
     match f3 {
@@ -344,6 +393,7 @@ pub fn decode(instruction: u32) -> Instruction {
         opcodes::B_TYPE => decode_b_with_f(instruction),
         opcodes::R_TYPE => decode_r_with_f(instruction),
         opcodes::RI_TYPE => decode_ri_with_f(instruction),
+        opcodes::RA_TYPE => decode_ra_with_f(instruction),
         opcodes::I_TYPE => decode_i_with_f(instruction),
         opcodes::S_TYPE => decode_s_with_f(instruction),
         _ => {
