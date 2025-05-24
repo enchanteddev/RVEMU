@@ -64,6 +64,15 @@ pub enum Instruction {
     SRA(RInstr),
     OR(RInstr),
     AND(RInstr),
+    MUL(RInstr),
+    MULH(RInstr),
+    MULSU(RInstr),
+    MULU(RInstr),
+    DIV(RInstr),
+    DIVU(RInstr),
+    REM(RInstr),
+    REMU(RInstr),
+
     FENCE {
         fm: u8,
         pred: u8,
@@ -125,6 +134,15 @@ mod f3codes {
     pub const XORI: u32 = 0b100;
     pub const ORI: u32 = 0b110;
     pub const ANDI: u32 = 0b111;
+
+    pub const MUL: u32 = 0b000;
+    pub const MULH: u32 = 0b001;
+    pub const MULSU: u32 = 0b010;
+    pub const MULU: u32 = 0b011;
+    pub const DIV: u32 = 0b100;
+    pub const DIVU: u32 = 0b101;
+    pub const REM: u32 = 0b110;
+    pub const REMU: u32 = 0b111;
 }
 
 mod f7codes {
@@ -132,6 +150,7 @@ mod f7codes {
     pub const SRAI: u32 = 0b0100000;
     pub const ADD: u32 = 0b0000000;
     pub const SUB: u32 = 0b0100000;
+    pub const MULDIV: u32 = 0b0000001;
     pub const SRL: u32 = 0b0000000;
     pub const SRA: u32 = 0b0100000;
 }
@@ -218,6 +237,21 @@ fn decode_b_with_f(instruction: u32) -> Instruction {
 fn decode_r_with_f(instruction: u32) -> Instruction {
     let f3 = instruction >> 12 & 0b111;
     let f7 = instruction >> 25;
+
+    if f7 == f7codes::MULDIV {
+        return match f3 {
+            f3codes::MUL => Instruction::MUL(decode_r(instruction)),
+            f3codes::MULH => Instruction::MULH(decode_r(instruction)),
+            f3codes::MULSU => Instruction::MULSU(decode_r(instruction)),
+            f3codes::MULU => Instruction::MULU(decode_r(instruction)),
+            f3codes::DIV => Instruction::DIV(decode_r(instruction)),
+            f3codes::DIVU => Instruction::DIVU(decode_r(instruction)),
+            f3codes::REM => Instruction::REM(decode_r(instruction)),
+            f3codes::REMU => Instruction::REMU(decode_r(instruction)),
+            _ => unreachable!(),
+        };
+    }
+
     match f3 {
         f3codes::ADD_SUB => match f7 {
             f7codes::ADD => Instruction::ADD(decode_r(instruction)),

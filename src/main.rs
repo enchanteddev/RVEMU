@@ -21,15 +21,14 @@ impl DynamicMemory {
     fn load(&mut self, addr: u32) -> u8 {
         match self.inner.get(&addr) {
             Some(value) => *value,
-            None => {
-                self.inner.insert(addr, 0);
-                0
-            }
+            None => 0,
         }
     }
 
     fn store(&mut self, addr: u32, value: u8) {
-        self.inner.insert(addr, value);
+        if value != 0 {
+            self.inner.insert(addr, value);
+        }
     }
 }
 
@@ -66,58 +65,68 @@ impl Machine {
         let oldpc = self.pc;
         match instruction {
             Instruction::LUI(UInstr { imm, rd }) => self.registers[rd as usize] = imm,
-            Instruction::AUIPC(UInstr { imm, rd }) => {
-                self.registers[rd as usize] = self.pc + imm
-            }
+            Instruction::AUIPC(UInstr { imm, rd }) => self.registers[rd as usize] = self.pc + imm,
             Instruction::JAL(UInstr { imm, rd }) => {
                 self.registers[rd as usize] = self.pc + 1;
                 self.pc += imm >> 2;
-            },
+            }
             Instruction::JALR(IInstr { imm, rs1, rd }) => {
                 self.registers[rd as usize] = self.pc + 1;
                 self.pc = self.registers[rs1 as usize] + (imm >> 2);
-            },
+            }
             Instruction::BEQ(SInstr { imm, rs1, rs2 }) => {
                 if self.registers[rs1 as usize] == self.registers[rs2 as usize] {
-                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
+                    self.pc = self
+                        .pc
+                        .wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
-            },
+            }
             Instruction::BNE(SInstr { imm, rs1, rs2 }) => {
                 if self.registers[rs1 as usize] != self.registers[rs2 as usize] {
                     println!("{}", sign_extend(imm, 12) as i32);
-                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
+                    self.pc = self
+                        .pc
+                        .wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
-            },
+            }
             Instruction::BLT(SInstr { imm, rs1, rs2 }) => {
                 if (self.registers[rs1 as usize] as i32) < (self.registers[rs2 as usize] as i32) {
-                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
+                    self.pc = self
+                        .pc
+                        .wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
-            },
+            }
             Instruction::BGE(SInstr { imm, rs1, rs2 }) => {
                 if (self.registers[rs1 as usize] as i32) >= (self.registers[rs2 as usize] as i32) {
-                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
+                    self.pc = self
+                        .pc
+                        .wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
-            },
+            }
             Instruction::BLTU(SInstr { imm, rs1, rs2 }) => {
                 if self.registers[rs1 as usize] < self.registers[rs2 as usize] {
-                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
+                    self.pc = self
+                        .pc
+                        .wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
-            },
+            }
             Instruction::BGEU(SInstr { imm, rs1, rs2 }) => {
                 if self.registers[rs1 as usize] >= self.registers[rs2 as usize] {
-                    self.pc = self.pc.wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
+                    self.pc = self
+                        .pc
+                        .wrapping_add_signed(sign_extend(imm, 12) as i32 >> 2);
                 }
-            },
+            }
             Instruction::LB(IInstr { imm, rs1, rd }) => {
                 let addr = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
                 self.registers[rd as usize] = sign_extend(self.memory.load(addr as u32) as u32, 8);
-            },
+            }
             Instruction::LH(IInstr { imm, rs1, rd }) => {
                 let addr = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
                 let first_byte = self.memory.load(addr as u32) as u32;
                 let second_byte = self.memory.load(addr as u32 + 1) as u32;
                 self.registers[rd as usize] = sign_extend((second_byte << 8) | first_byte, 16);
-            },
+            }
             Instruction::LW(IInstr { imm, rs1, rd }) => {
                 let addr = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
                 let first_byte = self.memory.load(addr as u32) as u32;
@@ -126,22 +135,22 @@ impl Machine {
                 let fourth_byte = self.memory.load(addr as u32 + 3) as u32;
                 self.registers[rd as usize] =
                     fourth_byte << 24 | third_byte << 16 | second_byte << 8 | first_byte;
-            },
+            }
             Instruction::LBU(IInstr { imm, rs1, rd }) => {
                 let addr = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
                 self.registers[rd as usize] = self.memory.load(addr as u32) as u32;
-            },
+            }
             Instruction::LHU(IInstr { imm, rs1, rd }) => {
                 let addr = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
                 let first_byte = self.memory.load(addr as u32) as u32;
                 let second_byte = self.memory.load(addr as u32 + 1) as u32;
                 self.registers[rd as usize] = sign_extend((first_byte << 8) | second_byte, 16);
-            },
+            }
             Instruction::SB(SInstr { imm, rs1, rs2 }) => {
                 let addr = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
                 self.memory
                     .store(addr as u32, self.registers[rs2 as usize] as u8);
-            },
+            }
             Instruction::SH(SInstr { imm, rs1, rs2 }) => {
                 let addr = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
                 let reg_val = self.registers[rs2 as usize];
@@ -149,7 +158,7 @@ impl Machine {
                 let second_byte = (reg_val >> 8) as u8;
                 self.memory.store(addr as u32, first_byte);
                 self.memory.store(addr as u32 + 1, second_byte);
-            },
+            }
             Instruction::SW(SInstr { imm, rs1, rs2 }) => {
                 let addr = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
                 let reg_val = self.registers[rs2 as usize];
@@ -161,83 +170,137 @@ impl Machine {
                 self.memory.store(addr as u32 + 1, second_byte);
                 self.memory.store(addr as u32 + 2, third_byte);
                 self.memory.store(addr as u32 + 3, fourth_byte);
-            },
+            }
             Instruction::ADDI(IInstr { imm, rs1, rd }) => {
-                self.registers[rd as usize] = self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
-            },
+                self.registers[rd as usize] =
+                    self.registers[rs1 as usize].wrapping_add(sign_extend(imm, 12));
+            }
             Instruction::SLTI(IInstr { imm, rs1, rd }) => {
-                self.registers[rd as usize] = if self.registers[rs1 as usize] < sign_extend(imm, 12) {
+                self.registers[rd as usize] = if self.registers[rs1 as usize] < sign_extend(imm, 12)
+                {
                     1
                 } else {
                     0
                 };
-            },
+            }
             Instruction::SLTIU(IInstr { imm, rs1, rd }) => {
                 self.registers[rd as usize] = if self.registers[rs1 as usize] < imm {
                     1
                 } else {
                     0
                 };
-            },
+            }
             Instruction::XORI(IInstr { imm, rs1, rd }) => {
                 self.registers[rd as usize] = self.registers[rs1 as usize] ^ sign_extend(imm, 12);
-            },
+            }
             Instruction::ORI(IInstr { imm, rs1, rd }) => {
                 self.registers[rd as usize] = self.registers[rs1 as usize] | sign_extend(imm, 12);
-            },
+            }
             Instruction::ANDI(IInstr { imm, rs1, rd }) => {
                 self.registers[rd as usize] = self.registers[rs1 as usize] & sign_extend(imm, 12);
-            },
+            }
             Instruction::SLLI(RInstr { rs1, rd, rs2 }) => {
                 let shamt = rs2;
                 self.registers[rd as usize] = self.registers[rs1 as usize] << shamt;
-            },
+            }
             Instruction::SRLI(RInstr { rs1, rd, rs2 }) => {
                 let shamt = rs2;
                 self.registers[rd as usize] = self.registers[rs1 as usize] >> shamt;
-            },
+            }
             Instruction::SRAI(RInstr { rs1, rd, rs2 }) => {
                 let shamt = rs2;
-                self.registers[rd as usize] = (self.registers[rs1 as usize] as i32).wrapping_shr(shamt as u32) as u32;
-            },
+                self.registers[rd as usize] =
+                    (self.registers[rs1 as usize] as i32).wrapping_shr(shamt as u32) as u32;
+            }
             Instruction::ADD(RInstr { rs1, rd, rs2 }) => {
-                self.registers[rd as usize] = self.registers[rs1 as usize] + self.registers[rs2 as usize];
-            },
+                self.registers[rd as usize] =
+                    self.registers[rs1 as usize] + self.registers[rs2 as usize];
+            }
             Instruction::SUB(RInstr { rs1, rd, rs2 }) => {
-                self.registers[rd as usize] = self.registers[rs1 as usize] - self.registers[rs2 as usize];
-            },
+                self.registers[rd as usize] =
+                    self.registers[rs1 as usize] - self.registers[rs2 as usize];
+            }
             Instruction::SLL(RInstr { rs1, rd, rs2 }) => {
-                self.registers[rd as usize] = self.registers[rs1 as usize] << self.registers[rs2 as usize];
-            },
+                self.registers[rd as usize] =
+                    self.registers[rs1 as usize] << self.registers[rs2 as usize];
+            }
             Instruction::SLT(RInstr { rs1, rd, rs2 }) => {
-                self.registers[rd as usize] = if (self.registers[rs1 as usize] as i32) < (self.registers[rs2 as usize] as i32) {
+                self.registers[rd as usize] = if (self.registers[rs1 as usize] as i32)
+                    < (self.registers[rs2 as usize] as i32)
+                {
                     1
                 } else {
                     0
                 };
-            },
+            }
             Instruction::SLTU(RInstr { rs1, rd, rs2 }) => {
-                self.registers[rd as usize] = if self.registers[rs1 as usize] < self.registers[rs2 as usize] {
-                    1
-                } else {
-                    0
-                };
-            },
+                self.registers[rd as usize] =
+                    if self.registers[rs1 as usize] < self.registers[rs2 as usize] {
+                        1
+                    } else {
+                        0
+                    };
+            }
             Instruction::XOR(RInstr { rs1, rd, rs2 }) => {
-                self.registers[rd as usize] = self.registers[rs1 as usize] ^ self.registers[rs2 as usize];
-            },
+                self.registers[rd as usize] =
+                    self.registers[rs1 as usize] ^ self.registers[rs2 as usize];
+            }
             Instruction::SRL(RInstr { rs1, rd, rs2 }) => {
-                self.registers[rd as usize] = self.registers[rs1 as usize] >> self.registers[rs2 as usize];
-            },
+                self.registers[rd as usize] =
+                    self.registers[rs1 as usize] >> self.registers[rs2 as usize];
+            }
             Instruction::SRA(RInstr { rs1, rd, rs2 }) => {
-                self.registers[rd as usize] = (self.registers[rs1 as usize] as i32).wrapping_shr(self.registers[rs2 as usize] as u32) as u32;
-            },
+                self.registers[rd as usize] = (self.registers[rs1 as usize] as i32)
+                    .wrapping_shr(self.registers[rs2 as usize] as u32)
+                    as u32;
+            }
             Instruction::OR(RInstr { rs1, rd, rs2 }) => {
-                self.registers[rd as usize] = self.registers[rs1 as usize] | self.registers[rs2 as usize];
-            },
+                self.registers[rd as usize] =
+                    self.registers[rs1 as usize] | self.registers[rs2 as usize];
+            }
             Instruction::AND(RInstr { rs1, rd, rs2 }) => {
-                self.registers[rd as usize] = self.registers[rs1 as usize] & self.registers[rs2 as usize];
-            },
+                self.registers[rd as usize] =
+                    self.registers[rs1 as usize] & self.registers[rs2 as usize];
+            }
+            Instruction::MUL(RInstr { rs1, rd, rs2 }) => {
+                self.registers[rd as usize] =
+                    self.registers[rs1 as usize].wrapping_mul(self.registers[rs2 as usize]);
+            }
+            Instruction::MULH(RInstr { rs1, rd, rs2 }) => {
+                let rs1_val = self.registers[rs1 as usize] as u64;
+                let rs2_val = self.registers[rs2 as usize] as u64;
+                self.registers[rd as usize] = (rs1_val.wrapping_mul(rs2_val)) as u32;
+            }
+            Instruction::MULSU(RInstr { rs1, rd, rs2 }) => {
+                let rs1_val = self.registers[rs1 as usize] as i64;
+                let rs2_val = self.registers[rs2 as usize] as u64;
+                self.registers[rd as usize] = (rs1_val.wrapping_mul(rs2_val as i64)) as u32;
+            }
+            Instruction::MULU(RInstr { rs1, rd, rs2 }) => {
+                let rs1_val = self.registers[rs1 as usize] as u64;
+                let rs2_val = self.registers[rs2 as usize] as u64;
+                self.registers[rd as usize] = rs1_val.wrapping_mul(rs2_val) as u32;
+            }
+            Instruction::DIV(RInstr { rs1, rd, rs2 }) => {
+                let rs1_val = self.registers[rs1 as usize] as i32;
+                let rs2_val = self.registers[rs2 as usize] as i32;
+                self.registers[rd as usize] = rs1_val.wrapping_div(rs2_val) as u32;
+            }
+            Instruction::DIVU(RInstr { rs1, rd, rs2 }) => {
+                let rs1_val = self.registers[rs1 as usize];
+                let rs2_val = self.registers[rs2 as usize];
+                self.registers[rd as usize] = rs1_val.wrapping_div(rs2_val);
+            }
+            Instruction::REM(RInstr { rs1, rd, rs2 }) => {
+                let rs1_val = self.registers[rs1 as usize] as i32;
+                let rs2_val = self.registers[rs2 as usize] as i32;
+                self.registers[rd as usize] = rs1_val.wrapping_rem(rs2_val) as u32;
+            }
+            Instruction::REMU(RInstr { rs1, rd, rs2 }) => {
+                let rs1_val = self.registers[rs1 as usize];
+                let rs2_val = self.registers[rs2 as usize];
+                self.registers[rd as usize] = rs1_val.wrapping_rem(rs2_val);
+            }
             _ => {
                 println!("Unknown instruction: {:?}", instruction);
             }
@@ -258,6 +321,7 @@ fn read_instructions_binary(fp: &Path) -> Vec<u32> {
         .map(|x| u32::from_le_bytes(x.try_into().unwrap()))
         .collect()
 }
+
 
 fn main() {
     let instructions_raw = read_instructions_binary(&Path::new("tests/hello.bin"));
