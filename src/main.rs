@@ -1,12 +1,15 @@
 use decoder::{IInstr, Instruction, RInstr, SInstr, UInstr};
 use std::{
+    cell::RefCell,
     collections::HashMap,
     io::{self, Read},
+    mem::take,
     ops::{BitAnd, BitOr, BitXor},
     path::Path,
 };
 
 mod decoder;
+mod memmap;
 
 #[derive(Debug, Clone, Copy)]
 struct Flags {
@@ -22,6 +25,7 @@ impl Default for Flags {
 struct DynamicMemory {
     inner: HashMap<u32, u8>,
     flags: HashMap<u32, Flags>,
+    memmapped: Vec<RefCell<Box<dyn memmap::MemMapper>>>,
 }
 
 impl DynamicMemory {
@@ -29,10 +33,18 @@ impl DynamicMemory {
         DynamicMemory {
             inner: HashMap::new(),
             flags: HashMap::new(),
+            memmapped: Vec::new(),
         }
     }
 
     fn load(&mut self, addr: u32) -> u8 {
+        let mut memmapped = take(&mut self.memmapped);
+        for mm in &mut memmapped {
+            if mm.borrow().mem_bounds().contains(&addr) {
+                return mm.borrow_mut().on_read(addr, self).unwrap();
+            }
+        }
+        self.memmapped = memmapped;
         match self.inner.get(&addr) {
             Some(value) => *value,
             None => 0,
@@ -67,6 +79,14 @@ impl DynamicMemory {
         } else {
             self.inner.remove(&addr);
         }
+
+        let mut memmapped = take(&mut self.memmapped);
+        for mm in &mut memmapped {
+            if mm.borrow().mem_bounds().contains(&addr) {
+                mm.borrow_mut().on_write(addr, self).unwrap();
+            }
+        }
+        self.memmapped = memmapped;
     }
 
     fn set_flags<T>(&mut self, addr: u32, operation: T)
@@ -442,7 +462,7 @@ fn read_instructions_binary(fp: &Path) -> Vec<u32> {
 }
 
 fn main() {
-    let instructions_raw = read_instructions_binary(&Path::new("tests/hello.bin"));
+    let instructions_raw = read_instructions_binary(&Path::new("tests/uart.bin"));
     let instructions = instructions_raw
         .iter()
         .map(|x| decoder::decode(*x))
@@ -453,6 +473,9 @@ fn main() {
     }
     let mut machine = Machine::new();
     machine.load_instructions(instructions);
+
+    machine.pc = 0x4c / 4;
+
     loop {
         println!("{:?}", machine.instructions[machine.pc as usize]);
         machine.step();
