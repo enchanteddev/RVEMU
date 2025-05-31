@@ -5,6 +5,8 @@ use std::{
 
 use libc::{ECHO, ICANON, TCSANOW, tcgetattr, tcsetattr, termios};
 
+use crate::machine::DynamicMemory;
+
 use super::{MemMapper, MemMapperError};
 
 const UART_START: u32 = 0x1000_0000;
@@ -76,7 +78,7 @@ impl MemMapper for UART {
     fn on_read(
         &mut self,
         addr: u32,
-        dmem: &mut crate::DynamicMemory,
+        dmem: &mut DynamicMemory,
     ) -> Result<u8, MemMapperError> {
         if !self.mem_bounds().contains(&addr) {
             return Err(MemMapperError::AddressOutOfBounds);

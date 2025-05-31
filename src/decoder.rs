@@ -84,6 +84,7 @@ pub enum Instruction {
     AMOMAX(RInstr),
     AMOMIN(RInstr),
 
+    #[allow(dead_code)]
     FENCE {
         fm: u8,
         pred: u8,

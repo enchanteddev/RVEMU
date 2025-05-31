@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::DynamicMemory;
+use crate::machine::DynamicMemory;
 
 mod uart;
 
